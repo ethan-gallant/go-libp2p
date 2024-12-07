@@ -79,7 +79,7 @@ func NewIdentity(privKey ic.PrivKey, opts ...IdentityOption) (*Identity, error) 
 		opt(&config)
 	}
 
-	// Load CA cert and key from /tmp/ca.pem (assumes PEM with cert+key)
+	// Load CA cert and key from file
 	caCertPEM, err := os.ReadFile(os.Getenv("CA_CERT_PATH"))
 	if err != nil {
 		return nil, err
@@ -186,7 +186,7 @@ func (i *Identity) ConfigForPeer(remote peer.ID) (*tls.Config, <-chan ic.PubKey)
 // PubKeyFromCertChain verifies the certificate chain and extract the remote's public key.
 func PubKeyFromCertChain(chain []*x509.Certificate) (ic.PubKey, error) {
 	if len(chain) < 1 {
-		return nil, errors.New("¡expected one certificates in the chain")
+		return nil, errors.New("expected one certificates in the chain")
 	}
 	cert := chain[0]
 	pool := x509.NewCertPool()
@@ -236,11 +236,9 @@ func PubKeyFromCertChain(chain []*x509.Certificate) (ic.PubKey, error) {
 	if !valid {
 		return nil, errors.New("signature invalid")
 	}
+
 	// Secondary verification step against the CA. We assume the CA pool is available.
-	// For minimal changes, load the CA pool here again, or pass it in somehow:
 	caPool := x509.NewCertPool()
-	// Read the same CA from /tmp/ca.pem as above:
-	// For minimal demo, just re-read. Ideally you'd store this outside or pass it in.
 	caCertPEM, err := os.ReadFile(os.Getenv("CA_CERT_PATH"))
 	if err != nil {
 		return nil, fmt.Errorf("CA read failed: %v", err)
