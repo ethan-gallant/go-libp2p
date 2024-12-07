@@ -185,8 +185,8 @@ func (i *Identity) ConfigForPeer(remote peer.ID) (*tls.Config, <-chan ic.PubKey)
 
 // PubKeyFromCertChain verifies the certificate chain and extract the remote's public key.
 func PubKeyFromCertChain(chain []*x509.Certificate) (ic.PubKey, error) {
-	if len(chain) != 1 {
-		return nil, errors.New("expected one certificates in the chain")
+	if len(chain) < 1 {
+		return nil, errors.New("¡expected one certificates in the chain")
 	}
 	cert := chain[0]
 	pool := x509.NewCertPool()
