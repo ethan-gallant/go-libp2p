@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -37,12 +38,16 @@ type signedKey struct {
 // Identity is used to secure connections
 type Identity struct {
 	config tls.Config
+	caCert *x509.Certificate
+	caPool *x509.CertPool
 }
 
 // IdentityConfig is used to configure an Identity
 type IdentityConfig struct {
 	CertTemplate *x509.Certificate
 	KeyLogWriter io.Writer
+	CACert       *x509.Certificate
+	CAPrivKey    crypto.PrivateKey
 }
 
 // IdentityOption transforms an IdentityConfig to apply optional settings.
@@ -74,7 +79,32 @@ func NewIdentity(privKey ic.PrivKey, opts ...IdentityOption) (*Identity, error) 
 		opt(&config)
 	}
 
-	var err error
+	// Load CA cert and key from /tmp/ca.pem (assumes PEM with cert+key)
+	caCertPEM, err := os.ReadFile("/certs/ca/ca.pem")
+	if err != nil {
+		return nil, err
+	}
+	// parse PEM
+	block, rest := pem.Decode(caCertPEM)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, fmt.Errorf("no valid CA cert found in /tmp/ca.pem")
+	}
+	caCert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	// Next block should be key
+	blockKey, _ := pem.Decode(rest)
+	if blockKey == nil {
+		return nil, fmt.Errorf("no CA private key found in /tmp/ca.pem")
+	}
+	caKey, err := x509.ParsePKCS8PrivateKey(blockKey.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	config.CACert = caCert
+	config.CAPrivKey = caKey
+
 	if config.CertTemplate == nil {
 		config.CertTemplate, err = certTemplate()
 		if err != nil {
@@ -82,7 +112,7 @@ func NewIdentity(privKey ic.PrivKey, opts ...IdentityOption) (*Identity, error) 
 		}
 	}
 
-	cert, err := keyToCertificate(privKey, config.CertTemplate)
+	cert, err := keyToCertificate(privKey, config.CertTemplate, config.CACert, config.CAPrivKey)
 	if err != nil {
 		return nil, err
 	}
@@ -206,6 +236,29 @@ func PubKeyFromCertChain(chain []*x509.Certificate) (ic.PubKey, error) {
 	if !valid {
 		return nil, errors.New("signature invalid")
 	}
+	// Secondary verification step against the CA. We assume the CA pool is available.
+	// For minimal changes, load the CA pool here again, or pass it in somehow:
+	caPool := x509.NewCertPool()
+	// Read the same CA from /tmp/ca.pem as above:
+	// For minimal demo, just re-read. Ideally you'd store this outside or pass it in.
+	caCertPEM, err := os.ReadFile("/certs/ca/ca.pem")
+	if err != nil {
+		return nil, fmt.Errorf("CA read failed: %v", err)
+	}
+	block, _ := pem.Decode(caCertPEM)
+	if block == nil {
+		return nil, fmt.Errorf("no CA block found")
+	}
+	parsedCACert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	caPool.AddCert(parsedCACert)
+
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: caPool}); err != nil {
+		return nil, fmt.Errorf("CA verification failed: %v", err)
+	}
+
 	return pubKey, nil
 }
 
@@ -239,25 +292,29 @@ func GenerateSignedExtension(sk ic.PrivKey, pubKey crypto.PublicKey) (pkix.Exten
 // keyToCertificate generates a new ECDSA private key and corresponding x509 certificate.
 // The certificate includes an extension that cryptographically ties it to the provided libp2p
 // private key to authenticate TLS connections.
-func keyToCertificate(sk ic.PrivKey, certTmpl *x509.Certificate) (*tls.Certificate, error) {
+func keyToCertificate(sk ic.PrivKey, certTmpl *x509.Certificate, caCert *x509.Certificate, caKey crypto.PrivateKey) (*tls.Certificate, error) {
 	certKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
 	}
 
-	// after calling CreateCertificate, these will end up in Certificate.Extensions
 	extension, err := GenerateSignedExtension(sk, certKey.Public())
 	if err != nil {
 		return nil, err
 	}
 	certTmpl.ExtraExtensions = append(certTmpl.ExtraExtensions, extension)
 
-	certDER, err := x509.CreateCertificate(rand.Reader, certTmpl, certTmpl, certKey.Public(), certKey)
+	// Create a cert signed by the CA instead of self-signed
+	certDER, err := x509.CreateCertificate(rand.Reader, certTmpl, caCert, certKey.Public(), caKey)
 	if err != nil {
 		return nil, err
 	}
+
+	// Include the CA cert in the chain
+	caDER := caCert.Raw
+
 	return &tls.Certificate{
-		Certificate: [][]byte{certDER},
+		Certificate: [][]byte{certDER, caDER},
 		PrivateKey:  certKey,
 	}, nil
 }
