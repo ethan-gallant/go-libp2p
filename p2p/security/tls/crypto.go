@@ -80,7 +80,7 @@ func NewIdentity(privKey ic.PrivKey, opts ...IdentityOption) (*Identity, error) 
 	}
 
 	// Load CA cert and key from /tmp/ca.pem (assumes PEM with cert+key)
-	caCertPEM, err := os.ReadFile("/certs/ca/ca.pem")
+	caCertPEM, err := os.ReadFile(os.Getenv("CA_CERT_PATH"))
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +241,7 @@ func PubKeyFromCertChain(chain []*x509.Certificate) (ic.PubKey, error) {
 	caPool := x509.NewCertPool()
 	// Read the same CA from /tmp/ca.pem as above:
 	// For minimal demo, just re-read. Ideally you'd store this outside or pass it in.
-	caCertPEM, err := os.ReadFile("/certs/ca/ca.pem")
+	caCertPEM, err := os.ReadFile(os.Getenv("CA_CERT_PATH"))
 	if err != nil {
 		return nil, fmt.Errorf("CA read failed: %v", err)
 	}
