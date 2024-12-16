@@ -20,10 +20,13 @@ const (
 func WithTracer(et EventTracer) Option {
 	return func(hps *Service) error {
 		hps.tracer = &tracer{
-			et:    et,
-			mt:    nil,
-			self:  hps.host.ID(),
-			peers: make(map[peer.ID]peerInfo),
+			et:   et,
+			mt:   nil,
+			self: hps.host.ID(),
+			peers: make(map[peer.ID]struct {
+				counter int
+				last    time.Time
+			}),
 		}
 		return nil
 	}
@@ -33,10 +36,13 @@ func WithTracer(et EventTracer) Option {
 func WithMetricsTracer(mt MetricsTracer) Option {
 	return func(hps *Service) error {
 		hps.tracer = &tracer{
-			et:    nil,
-			mt:    mt,
-			self:  hps.host.ID(),
-			peers: make(map[peer.ID]peerInfo),
+			et:   nil,
+			mt:   mt,
+			self: hps.host.ID(),
+			peers: make(map[peer.ID]struct {
+				counter int
+				last    time.Time
+			}),
 		}
 		return nil
 	}
@@ -46,10 +52,13 @@ func WithMetricsTracer(mt MetricsTracer) Option {
 func WithMetricsAndEventTracer(mt MetricsTracer, et EventTracer) Option {
 	return func(hps *Service) error {
 		hps.tracer = &tracer{
-			et:    et,
-			mt:    mt,
-			self:  hps.host.ID(),
-			peers: make(map[peer.ID]peerInfo),
+			et:   et,
+			mt:   mt,
+			self: hps.host.ID(),
+			peers: make(map[peer.ID]struct {
+				counter int
+				last    time.Time
+			}),
 		}
 		return nil
 	}
@@ -65,12 +74,10 @@ type tracer struct {
 	ctxCancel context.CancelFunc
 
 	mutex sync.Mutex
-	peers map[peer.ID]peerInfo
-}
-
-type peerInfo struct {
-	counter int
-	last    time.Time
+	peers map[peer.ID]struct {
+		counter int
+		last    time.Time
+	}
 }
 
 type EventTracer interface {
