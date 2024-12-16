@@ -262,22 +262,7 @@ func NewHost(n network.Network, opts *HostOpts) (*BasicHost, error) {
 	}
 
 	if opts.EnableHolePunching {
-		if opts.EnableMetrics {
-			hpOpts := []holepunch.Option{
-				holepunch.WithMetricsTracer(holepunch.NewMetricsTracer(holepunch.WithRegisterer(opts.PrometheusRegisterer)))}
-			opts.HolePunchingOptions = append(hpOpts, opts.HolePunchingOptions...)
-
-		}
-		h.hps, err = holepunch.NewService(h, h.ids, func() []ma.Multiaddr {
-			addrs := h.AllAddrs()
-			if opts.AddrsFactory != nil {
-				addrs = slices.Clone(opts.AddrsFactory(addrs))
-			}
-			// AllAddrs may ignore observed addresses in favour of NAT mappings. Use both for hole punching.
-			addrs = append(addrs, h.ids.OwnObservedAddrs()...)
-			addrs = ma.Unique(addrs)
-			return slices.DeleteFunc(addrs, func(a ma.Multiaddr) bool { return !manet.IsPublicAddr(a) })
-		}, opts.HolePunchingOptions...)
+		h.hps, err = holepunch.NewService(h, h.ids, opts.HolePunchingOptions...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create hole punch service: %w", err)
 		}
