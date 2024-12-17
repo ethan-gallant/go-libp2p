@@ -72,7 +72,13 @@ type activeHolePunch struct {
 }
 
 // NewTransport creates a new QUIC transport
-func NewTransport(key ic.PrivKey, connManager *quicreuse.ConnManager, psk pnet.PSK, gater connmgr.ConnectionGater, rcmgr network.ResourceManager) (tpt.Transport, error) {
+func NewTransport(
+	key ic.PrivKey,
+	connManager *quicreuse.ConnManager,
+	psk pnet.PSK,
+	gater connmgr.ConnectionGater,
+	rcmgr network.ResourceManager,
+) (tpt.Transport, error) {
 	if len(psk) > 0 {
 		log.Error("QUIC doesn't support private networks yet.")
 		return nil, errors.New("QUIC doesn't support private networks yet")
@@ -189,6 +195,7 @@ func (t *transport) removeConn(conn quic.Connection) {
 }
 
 func (t *transport) holePunch(ctx context.Context, raddr ma.Multiaddr, p peer.ID) (tpt.CapableConn, error) {
+	log.Infof("Starting a hole punch to %s", raddr)
 	network, saddr, err := manet.DialArgs(raddr)
 	if err != nil {
 		return nil, err
@@ -216,46 +223,43 @@ func (t *transport) holePunch(ctx context.Context, raddr ma.Multiaddr, p peer.ID
 	t.holePunching[key] = &activeHolePunch{connCh: connCh}
 	t.holePunchingMx.Unlock()
 
-	var timer *time.Timer
-	defer func() {
-		if timer != nil {
-			timer.Stop()
-		}
-	}()
+	now := time.Now()
+	sleepDur := 100*time.Millisecond - time.Duration(now.UnixNano()%int64(100*time.Millisecond))
+	time.Sleep(sleepDur)
 
 	payload := make([]byte, 64)
 	var punchErr error
+
+	// Create a ticker for consistent 100ms intervals
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
 loop:
-	for i := 0; ; i++ {
+	// 120 iterations = 12 seconds total, matching Python version
+	for i := 0; i < 120; i++ {
 		t.rndMx.Lock()
+		log.Debugf("Punching hole to %s", addr)
 		_, err := t.rnd.Read(payload)
 		t.rndMx.Unlock()
 		if err != nil {
 			punchErr = err
 			break
 		}
+
+		// Send at the start of each interval
 		if _, err := tr.WriteTo(payload, addr); err != nil {
 			punchErr = err
 			break
 		}
 
-		maxSleep := 10 * (i + 1) * (i + 1) // in ms
-		if maxSleep > 200 {
-			maxSleep = 200
-		}
-		d := 10*time.Millisecond + time.Duration(rand.Intn(maxSleep))*time.Millisecond
-		if timer == nil {
-			timer = time.NewTimer(d)
-		} else {
-			timer.Reset(d)
-		}
 		select {
 		case c := <-connCh:
 			t.holePunchingMx.Lock()
 			delete(t.holePunching, key)
 			t.holePunchingMx.Unlock()
 			return c, nil
-		case <-timer.C:
+		case <-ticker.C:
+			// Wait for next 100ms interval
 		case <-ctx.Done():
 			punchErr = ErrHolePunching
 			break loop
