@@ -93,7 +93,12 @@ func NewIdentity(privKey ic.PrivKey, opts ...IdentityOption) (*Identity, error) 
 
 	// Use default cert manager if none provided
 	if config.CertManager == nil {
-		config.CertManager = &DefaultCertManager{}
+		mgr, err := NewCACertManager(os.Getenv("CA_CERT_PATH"))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create CA cert manager: %w", err)
+		}
+
+		config.CertManager = mgr
 	}
 
 	if config.CertTemplate == nil {
