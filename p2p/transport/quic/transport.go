@@ -134,7 +134,7 @@ func (t *transport) dialWithScope(ctx context.Context, raddr ma.Multiaddr, p pee
 	}
 
 	tlsConf, keyCh := t.identity.ConfigForPeer(p)
-	ctx = quicreuse.WithAssociation(ctx, t)
+
 	pconn, err := t.connManager.DialQUIC(ctx, raddr, tlsConf, t.allowWindowIncrease)
 	if err != nil {
 		return nil, err
@@ -187,6 +187,7 @@ func (t *transport) removeConn(conn quic.Connection) {
 }
 
 func (t *transport) holePunch(ctx context.Context, raddr ma.Multiaddr, p peer.ID) (tpt.CapableConn, error) {
+	log.Debugf("Attempting hole punching to peer %s @ %s", p, raddr)
 	network, saddr, err := manet.DialArgs(raddr)
 	if err != nil {
 		return nil, err
@@ -285,7 +286,6 @@ func (t *transport) CanDial(addr ma.Multiaddr) bool {
 func (t *transport) Listen(addr ma.Multiaddr) (tpt.Listener, error) {
 	var tlsConf tls.Config
 	tlsConf.GetConfigForClient = func(_ *tls.ClientHelloInfo) (*tls.Config, error) {
-		// return a tls.Config that verifies the peer's certificate chain.
 		// Note that since we have no way of associating an incoming QUIC connection with
 		// the peer ID calculated here, we don't actually receive the peer's public key
 		// from the key chan.

@@ -131,28 +131,7 @@ func (s *Service) waitForPublicAddr() {
 	// address.
 	// As we currently don't have an event like this, just check our observed addresses
 	// regularly (exponential backoff starting at 250 ms, capped at 5s).
-	duration := 250 * time.Millisecond
-	const maxDuration = 5 * time.Second
-	t := time.NewTimer(duration)
-	defer t.Stop()
-	for {
-		if len(s.listenAddrs()) > 0 {
-			log.Debugf("Host %s now has a public address (%s). Starting holepunch protocol.", s.host.ID(), s.host.Addrs())
-			s.host.SetStreamHandler(Protocol, s.handleNewStream)
-			break
-		}
-
-		select {
-		case <-s.ctx.Done():
-			return
-		case <-t.C:
-			duration *= 2
-			if duration > maxDuration {
-				duration = maxDuration
-			}
-			t.Reset(duration)
-		}
-	}
+	s.host.SetStreamHandler(Protocol, s.handleNewStream)
 
 	s.holePuncherMx.Lock()
 	if s.ctx.Err() != nil {
