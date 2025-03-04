@@ -134,6 +134,7 @@ func (t *transport) dialWithScope(ctx context.Context, raddr ma.Multiaddr, p pee
 	}
 
 	tlsConf, keyCh := t.identity.ConfigForPeer(p)
+	ctx = quicreuse.WithAssociation(ctx, t)
 
 	pconn, err := t.connManager.DialQUIC(ctx, raddr, tlsConf, t.allowWindowIncrease)
 	if err != nil {
