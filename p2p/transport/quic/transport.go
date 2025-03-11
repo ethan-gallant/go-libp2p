@@ -70,16 +70,25 @@ type activeHolePunch struct {
 }
 
 // NewTransport creates a new QUIC transport
-func NewTransport(key ic.PrivKey, connManager *quicreuse.ConnManager, psk pnet.PSK, gater connmgr.ConnectionGater, rcmgr network.ResourceManager) (tpt.Transport, error) {
+func NewTransport(
+	key ic.PrivKey,
+	connManager *quicreuse.ConnManager,
+	psk pnet.PSK,
+	gater connmgr.ConnectionGater,
+	rcmgr network.ResourceManager,
+	identityOptions ...p2ptls.IdentityOption,
+) (tpt.Transport, error) {
 	if len(psk) > 0 {
 		log.Error("QUIC doesn't support private networks yet.")
 		return nil, errors.New("QUIC doesn't support private networks yet")
 	}
+
 	localPeer, err := peer.IDFromPrivateKey(key)
 	if err != nil {
 		return nil, err
 	}
-	identity, err := p2ptls.NewIdentity(key)
+
+	identity, err := p2ptls.NewIdentity(key, identityOptions...)
 	if err != nil {
 		return nil, err
 	}
